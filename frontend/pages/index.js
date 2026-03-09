@@ -1,0 +1,210 @@
+import { useEffect, useState } from "react";
+import axios from "axios";
+import OptionsChain from "../components/OptionsChain";
+
+export default function Home() {
+  const [tickerInput, setTickerInput] = useState("");
+  const [activeTicker, setActiveTicker] = useState("");
+  const [expiries, setExpiries] = useState([]);
+  const [selectedExpiry, setSelectedExpiry] = useState("");
+  const [chainData, setChainData] = useState({ calls: [], puts: [] });
+  const [currentPrice, setCurrentPrice] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const backendBaseUrl = "http://localhost:8000";
+
+  const fetchExpiriesAndQuote = async (ticker) => {
+    try {
+      setError("");
+      setLoading(true);
+
+      const [expiriesRes, quoteRes] = await Promise.all([
+        axios.get(`${backendBaseUrl}/api/expiries/${ticker}`),
+        axios.get(`${backendBaseUrl}/api/quote/${ticker}`),
+      ]);
+
+      const expiryList = expiriesRes.data?.expiries ?? [];
+      setExpiries(expiryList);
+      setSelectedExpiry(expiryList[0] || "");
+
+      const price = quoteRes.data?.currentPrice ?? null;
+      setCurrentPrice(price);
+    } catch (err) {
+      console.error(err);
+      setError("Unable to fetch expiries/quote. Please check the ticker.");
+      setExpiries([]);
+      setSelectedExpiry("");
+      setCurrentPrice(null);
+      setChainData({ calls: [], puts: [] });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchChain = async (ticker, expiry) => {
+    if (!ticker || !expiry) return;
+
+    try {
+      setError("");
+      setLoading(true);
+      const res = await axios.get(
+        `${backendBaseUrl}/api/chain/${ticker}/${expiry}`
+      );
+      setChainData({
+        calls: res.data?.calls ?? [],
+        puts: res.data?.puts ?? [],
+      });
+    } catch (err) {
+      console.error(err);
+      setError("Unable to fetch options chain for this ticker / expiry.");
+      setChainData({ calls: [], puts: [] });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // When selectedExpiry or activeTicker change, refetch the chain
+  useEffect(() => {
+    if (activeTicker && selectedExpiry) {
+      fetchChain(activeTicker, selectedExpiry);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTicker, selectedExpiry]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const t = tickerInput.trim().toUpperCase();
+    if (!t) return;
+    setActiveTicker(t);
+    await fetchExpiriesAndQuote(t);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      {/* Top nav */}
+      <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-emerald-500/20 border border-emerald-500/40">
+              <span className="text-sm font-bold text-emerald-400">OF</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold tracking-[0.2em] text-slate-100 uppercase">
+                OptionFlow
+              </span>
+              <span className="text-xs text-slate-400">
+                Real-time options visibility
+              </span>
+            </div>
+          </div>
+          <div className="hidden text-xs font-mono text-slate-500 sm:block">
+            Backend:{" "}
+            <span className="text-emerald-400">{backendBaseUrl}</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Main content */}
+      <main className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 sm:py-8">
+        {/* Search + expiry controls */}
+        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 shadow-lg shadow-black/40">
+          <form
+            onSubmit={handleSubmit}
+            className="flex flex-col gap-3 sm:flex-row sm:items-end"
+          >
+            <div className="flex-1">
+              <label
+                htmlFor="ticker"
+                className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400"
+              >
+                Ticker
+              </label>
+              <input
+                id="ticker"
+                type="text"
+                placeholder="AAPL"
+                value={tickerInput}
+                onChange={(e) => setTickerInput(e.target.value)}
+                className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono text-slate-100 outline-none ring-0 transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 placeholder:text-slate-500"
+              />
+              <p className="mt-1 text-[11px] text-slate-500">
+                Type a symbol and press Enter to load expiries and chain.
+              </p>
+            </div>
+
+            <div className="w-full sm:w-56">
+              <label
+                htmlFor="expiry"
+                className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400"
+              >
+                Expiry
+              </label>
+              <select
+                id="expiry"
+                value={selectedExpiry}
+                onChange={(e) => setSelectedExpiry(e.target.value)}
+                disabled={!expiries.length}
+                className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 transition disabled:cursor-not-allowed disabled:opacity-50 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+              >
+                {!expiries.length && <option>No expiries</option>}
+                {expiries.map((exp) => (
+                  <option key={exp} value={exp}>
+                    {exp}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Expiry dates from OptionFlow backend.
+              </p>
+            </div>
+
+            <button
+              type="submit"
+              className="mt-1 inline-flex items-center justify-center rounded-md border border-emerald-500/60 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-300 shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-500/30 sm:mt-0"
+            >
+              Load Chain
+            </button>
+          </form>
+
+          {/* Status area */}
+          <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
+            <div>
+              {activeTicker ? (
+                <span>
+                  Active ticker:{" "}
+                  <span className="font-mono text-emerald-400">
+                    {activeTicker}
+                  </span>
+                </span>
+              ) : (
+                <span>Enter a ticker to begin.</span>
+              )}
+            </div>
+            {loading && (
+              <div className="flex items-center gap-2">
+                <span className="inline-flex h-3 w-3 animate-spin rounded-full border-[2px] border-emerald-400 border-t-transparent" />
+                <span>Fetching data…</span>
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="mt-3 rounded-md border border-rose-500/60 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">
+              {error}
+            </div>
+          )}
+        </section>
+
+        {/* Options chain */}
+        <section>
+          <OptionsChain
+            ticker={activeTicker}
+            chainData={chainData}
+            currentPrice={currentPrice}
+          />
+        </section>
+      </main>
+    </div>
+  );
+}
